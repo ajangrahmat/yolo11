@@ -5,3 +5,4 @@ results = model('gambar.jpg')
 
 for result in results:
     result.show()
+    
