@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YOLO Multi Device Monitoring</title>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+<style>
+    * { box-sizing: border-box; }
+
+    body {
+        margin: 0;
+        font-family: Inter, Arial, sans-serif;
+        background: #0b0d10;
+        color: #e8eaed;
+        overflow: hidden;
+    }
+
+    .app { display: flex; height: 100vh; }
+
+    /* SIDEBAR */
+    .sidebar {
+        width: 235px;
+        background: #111419;
+        border-right: 1px solid #24282f;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+    }
+
+    .brand {
+        height: 68px;
+        padding: 0 20px;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        border-bottom: 1px solid #24282f;
+    }
+
+    .brand-icon {
+        width: 34px; height: 34px;
+        border-radius: 9px;
+        background: #1b1f26;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px;
+    }
+
+    .brand-title { font-size: 15px; font-weight: 700; }
+    .brand-sub { font-size: 10px; color: #747b86; margin-top: 2px; }
+
+    .sidebar-section {
+        padding: 18px 12px 8px;
+        font-size: 10px;
+        color: #6f7680;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+    }
+
+    .device {
+        margin: 3px 10px;
+        padding: 11px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex; align-items: center; gap: 10px;
+        transition: .15s;
+    }
+    .device:hover { background: #191d23; }
+    .device.active { background: #1b2027; }
+
+    .device-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: #4ade80;
+        flex-shrink: 0;
+    }
+    .device-dot.offline { background: #626873; }
+
+    .device-info { min-width: 0; flex: 1; }
+
+    .device-name {
+        font-size: 12px; font-weight: 600;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .device-meta { font-size: 10px; color: #747b86; margin-top: 3px; }
+
+    .sidebar-bottom {
+        margin-top: auto;
+        padding: 15px;
+        border-top: 1px solid #24282f;
+    }
+
+    .mqtt-status {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 11px; color: #9aa1ab;
+    }
+
+    .mqtt-dot {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: #626873;
+    }
+    .mqtt-dot.on { background: #4ade80; }
+
+    /* MAIN */
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+    .topbar {
+        height: 68px;
+        border-bottom: 1px solid #24282f;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 22px;
+        background: #0f1115;
+    }
+
+    .page-title { font-size: 18px; font-weight: 700; }
+    .page-subtitle { font-size: 11px; color: #737a84; margin-top: 3px; }
+
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+
+    .online-badge {
+        border: 1px solid #244a34;
+        background: #102016;
+        color: #70e69a;
+        border-radius: 20px;
+        padding: 7px 11px;
+        font-size: 11px;
+    }
+
+    .content { padding: 18px; overflow: auto; }
+
+    /* SUMMARY */
+    .summary {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    .summary-card {
+        background: #111419;
+        border: 1px solid #24282f;
+        border-radius: 10px;
+        padding: 13px 15px;
+    }
+
+    .summary-label {
+        color: #737a84; font-size: 10px;
+        text-transform: uppercase; letter-spacing: .06em;
+    }
+
+    .summary-value { margin-top: 7px; font-size: 21px; font-weight: 700; }
+
+    .summary-small {
+        font-size: 10px; color: #666d77;
+        margin-left: 5px; font-weight: 400;
+    }
+
+    .summary-names {
+        margin-top: 6px;
+        font-size: 10px;
+        color: #8d949e;
+        line-height: 1.4;
+        min-height: 14px;
+    }
+
+    /* GRID */
+    .section-head {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 10px;
+    }
+    .section-title { font-size: 13px; font-weight: 600; }
+    .view-label { color: #686f79; font-size: 10px; }
+
+    .camera-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(240px, 1fr));
+        gap: 12px;
+    }
+
+    .camera-card {
+        background: #111419;
+        border: 1px solid #24282f;
+        border-radius: 10px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: border-color .15s, transform .15s;
+    }
+    .camera-card:hover { border-color: #444b55; transform: translateY(-1px); }
+
+    .video-wrap {
+        position: relative;
+        aspect-ratio: 16 / 9;
+        background: #08090b;
+        overflow: hidden;
+    }
+
+    .video-wrap img {
+        width: 100%; height: 100%;
+        object-fit: cover; display: block;
+    }
+
+    .offline-screen {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column;
+        color: #555c66; font-size: 11px;
+        background: radial-gradient(circle at center, #15181d 0, #090a0c 70%);
+    }
+
+    .offline-icon { font-size: 22px; margin-bottom: 7px; opacity: .7; }
+
+    .camera-status {
+        position: absolute; top: 9px; left: 9px;
+        display: flex; align-items: center; gap: 5px;
+        background: rgba(0,0,0,.65);
+        padding: 5px 7px; border-radius: 5px;
+        font-size: 9px;
+    }
+
+    .live-dot { width: 6px; height: 6px; background: #4ade80; border-radius: 50%; }
+    .live-dot.off { background: #686e77; }
+
+    .camera-name-overlay {
+        position: absolute; right: 9px; top: 9px;
+        background: rgba(0,0,0,.65);
+        padding: 5px 7px; border-radius: 5px;
+        font-size: 9px;
+    }
+
+    .camera-info { padding: 11px 12px 12px; }
+
+    .camera-title { display: flex; justify-content: space-between; align-items: center; }
+    .camera-title strong { font-size: 12px; }
+    .camera-location { color: #666d77; font-size: 9px; }
+
+    .camera-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+        margin-top: 10px;
+    }
+
+    .stat { background: #0c0e11; border-radius: 6px; padding: 7px; }
+    .stat-label { color: #5f6670; font-size: 8px; }
+    .stat-value { font-size: 11px; font-weight: 600; margin-top: 3px; }
+
+    /* DETECTION TAGS */
+    .detections {
+        margin-top: 9px;
+        display: flex; gap: 5px; flex-wrap: wrap;
+        min-height: 24px;
+    }
+
+    .tag {
+        font-size: 10px;
+        padding: 4px 8px;
+        background: #1a1e24;
+        color: #aeb4bd;
+        border-radius: 5px;
+    }
+
+    .tag.obj {
+        background: #12261a;
+        color: #7ff0a8;
+        border: 1px solid #1f4a2e;
+        font-weight: 600;
+    }
+
+    .tag.obj b { color: #fff; margin-left: 3px; }
+
+    /* DETAIL MODAL */
+    .modal {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.72);
+        display: none;
+        align-items: center; justify-content: center;
+        padding: 25px; z-index: 10;
+    }
+    .modal.show { display: flex; }
+
+    .modal-box {
+        width: min(900px, 95vw);
+        max-height: 95vh;
+        overflow: auto;
+        background: #111419;
+        border: 1px solid #30353d;
+        border-radius: 12px;
+    }
+
+    .modal-video { aspect-ratio: 16 / 9; background: #08090b; }
+    .modal-video img { width: 100%; height: 100%; object-fit: contain; }
+
+    .modal-head {
+        padding: 14px 17px;
+        display: flex; justify-content: space-between;
+    }
+
+    .close { cursor: pointer; color: #777e88; font-size: 18px; }
+
+    .modal-detect { padding: 0 17px 17px; }
+
+    .modal-detect-title {
+        font-size: 10px; color: #6f7680;
+        text-transform: uppercase; letter-spacing: .08em;
+        margin-bottom: 8px;
+    }
+
+    .det-row {
+        display: grid;
+        grid-template-columns: 1fr 70px 1.4fr;
+        gap: 10px;
+        align-items: center;
+        padding: 6px 0;
+        border-top: 1px solid #1c2027;
+        font-size: 11px;
+    }
+
+    .det-conf-bar {
+        height: 5px; border-radius: 3px;
+        background: #1c2027; overflow: hidden;
+    }
+    .det-conf-bar span {
+        display: block; height: 100%;
+        background: #4ade80;
+    }
+
+    .det-box { color: #666d77; font-size: 9px; }
+
+    /* RESPONSIVE */
+    @media (max-width: 1100px) {
+        .camera-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+        .summary { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 720px) {
+        .sidebar { width: 65px; }
+        .brand-title, .brand-sub, .sidebar-section,
+        .device-info, .sidebar-bottom span { display: none; }
+        .brand { justify-content: center; padding: 0; }
+        .device { justify-content: center; }
+        .camera-grid { grid-template-columns: 1fr; }
+    }
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+
+        <div class="brand">
+            <div class="brand-icon">◉</div>
+            <div>
+                <div class="brand-title">YOLO Monitor</div>
+                <div class="brand-sub">AI Vision Center</div>
+            </div>
+        </div>
+
+        <div class="sidebar-section">Devices</div>
+
+        <div class="device active">
+            <div class="device-dot offline" id="sideDot"></div>
+            <div class="device-info">
+                <div class="device-name">STB-CAM-01</div>
+                <div class="device-meta" id="sideMeta">Waiting...</div>
+            </div>
+        </div>
+
+        <div class="device">
+            <div class="device-dot"></div>
+            <div class="device-info">
+                <div class="device-name">STB-CAM-02</div>
+                <div class="device-meta">Live · 5.4 FPS</div>
+            </div>
+        </div>
+
+        <div class="device">
+            <div class="device-dot"></div>
+            <div class="device-info">
+                <div class="device-name">JETSON-CAM-01</div>
+                <div class="device-meta">Live · 12.1 FPS</div>
+            </div>
+        </div>
+
+        <div class="device">
+            <div class="device-dot offline"></div>
+            <div class="device-info">
+                <div class="device-name">STB-CAM-03</div>
+                <div class="device-meta">Offline</div>
+            </div>
+        </div>
+
+        <div class="device">
+            <div class="device-dot"></div>
+            <div class="device-info">
+                <div class="device-name">ESP-CAM-01</div>
+                <div class="device-meta">Live · 8.0 FPS</div>
+            </div>
+        </div>
+
+        <div class="sidebar-section">System</div>
+
+        <div class="device"><div class="device-info"><div class="device-name">Dashboard</div></div></div>
+        <div class="device"><div class="device-info"><div class="device-name">MQTT</div></div></div>
+        <div class="device"><div class="device-info"><div class="device-name">Settings</div></div></div>
+
+        <div class="sidebar-bottom">
+            <div class="mqtt-status">
+                <div class="mqtt-dot" id="mqttDot"></div>
+                <span id="mqttText">Connecting...</span>
+            </div>
+        </div>
+
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+
+        <header class="topbar">
+            <div>
+                <div class="page-title">Camera Monitoring</div>
+                <div class="page-subtitle">Real-time AI object detection</div>
+            </div>
+
+            <div class="top-actions">
+                <div class="online-badge">● 4 Online / 5 Devices</div>
+            </div>
+        </header>
+
+        <div class="content">
+
+            <!-- SUMMARY -->
+            <section class="summary">
+
+                <div class="summary-card">
+                    <div class="summary-label">Devices</div>
+                    <div class="summary-value">5<span class="summary-small">total</span></div>
+                </div>
+
+                <div class="summary-card">
+                    <div class="summary-label">Online</div>
+                    <div class="summary-value">4<span class="summary-small">devices</span></div>
+                </div>
+
+                <div class="summary-card">
+                    <div class="summary-label">Objects</div>
+                    <div class="summary-value">
+                        <span id="totalObjects">0</span><span class="summary-small">detected</span>
+                    </div>
+                    <div class="summary-names" id="totalNames">—</div>
+                </div>
+
+                <div class="summary-card">
+                    <div class="summary-label">MQTT</div>
+                    <div class="summary-value"><span id="mqttTop">CONNECTING</span></div>
+                </div>
+
+            </section>
+
+            <div class="section-head">
+                <div class="section-title">Live Cameras</div>
+                <div class="view-label">6 camera slots</div>
+            </div>
+
+            <!-- CAMERA GRID -->
+            <section class="camera-grid">
+
+                <!-- REAL DEVICE -->
+                <div class="camera-card" onclick="openCamera('STB-CAM-01')">
+
+                    <div class="video-wrap">
+                        <img id="mainFrame" alt="STB Camera">
+
+                        <div class="camera-status">
+                            <div class="live-dot off" id="liveDot"></div>
+                            <span id="liveText">WAITING</span>
+                        </div>
+
+                        <div class="camera-name-overlay">STB-CAM-01</div>
+                    </div>
+
+                    <div class="camera-info">
+
+                        <div class="camera-title">
+                            <strong>STB-CAM-01</strong>
+                            <span class="camera-location">Camera 01</span>
+                        </div>
+
+                        <div class="camera-stats">
+                            <div class="stat">
+                                <div class="stat-label">YOLO FPS</div>
+                                <div class="stat-value" id="fps">0.0</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-label">OBJECTS</div>
+                                <div class="stat-value" id="objects">0</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-label">STREAM</div>
+                                <div class="stat-value" id="streamFps">0.0</div>
+                            </div>
+                        </div>
+
+                        <div class="detections" id="detections">
+                            <span class="tag">Waiting...</span>
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- DUMMY 2 -->
+                <div class="camera-card" onclick="openCamera('STB-CAM-02')">
+                    <div class="video-wrap">
+                        <div class="offline-screen">
+                            <div class="offline-icon">◉</div>
+                            Preview
+                        </div>
+                        <div class="camera-status"><div class="live-dot"></div>LIVE</div>
+                        <div class="camera-name-overlay">STB-CAM-02</div>
+                    </div>
+                    <div class="camera-info">
+                        <div class="camera-title">
+                            <strong>STB-CAM-02</strong>
+                            <span class="camera-location">Camera 02</span>
+                        </div>
+                        <div class="camera-stats">
+                            <div class="stat"><div class="stat-label">YOLO FPS</div><div class="stat-value">5.4</div></div>
+                            <div class="stat"><div class="stat-label">OBJECTS</div><div class="stat-value">3</div></div>
+                            <div class="stat"><div class="stat-label">STREAM</div><div class="stat-value">5.0</div></div>
+                        </div>
+                        <div class="detections">
+                            <span class="tag obj">person<b>× 2</b></span>
+                            <span class="tag obj">car<b>× 1</b></span>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- DUMMY 3 -->
+                <div class="camera-card">
+                    <div class="video-wrap">
+                        <div class="offline-screen">
+                            <div class="offline-icon">◉</div>
+                            Preview
+                        </div>
+                        <div class="camera-status"><div class="live-dot"></div>LIVE</div>
+                        <div class="camera-name-overlay">JETSON-CAM-01</div>
+                    </div>
+                    <div class="camera-info">
+                        <div class="camera-title">
+                            <strong>JETSON-CAM-01</strong>
+                            <span class="camera-location">Camera 03</span>
+                        </div>
+                        <div class="camera-stats">
+                            <div class="stat"><div class="stat-label">YOLO FPS</div><div class="stat-value">12.1</div></div>
+                            <div class="stat"><div class="stat-label">OBJECTS</div><div class="stat-value">5</div></div>
+                            <div class="stat"><div class="stat-label">STREAM</div><div class="stat-value">10.0</div></div>
+                        </div>
+                        <div class="detections">
+                            <span class="tag obj">person<b>× 3</b></span>
+                            <span class="tag obj">helmet<b>× 2</b></span>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- DUMMY 4 -->
+                <div class="camera-card">
+                    <div class="video-wrap">
+                        <div class="offline-screen">
+                            <div class="offline-icon">◉</div>
+                            Preview
+                        </div>
+                        <div class="camera-status"><div class="live-dot"></div>LIVE</div>
+                        <div class="camera-name-overlay">ESP-CAM-01</div>
+                    </div>
+                    <div class="camera-info">
+                        <div class="camera-title">
+                            <strong>ESP-CAM-01</strong>
+                            <span class="camera-location">Camera 04</span>
+                        </div>
+                        <div class="camera-stats">
+                            <div class="stat"><div class="stat-label">YOLO FPS</div><div class="stat-value">8.0</div></div>
+                            <div class="stat"><div class="stat-label">OBJECTS</div><div class="stat-value">0</div></div>
+                            <div class="stat"><div class="stat-label">STREAM</div><div class="stat-value">7.8</div></div>
+                        </div>
+                        <div class="detections"><span class="tag">No object</span></div>
+                    </div>
+                </div>
+
+
+                <!-- OFFLINE -->
+                <div class="camera-card">
+                    <div class="video-wrap">
+                        <div class="offline-screen">
+                            <div class="offline-icon">×</div>
+                            Device Offline
+                        </div>
+                        <div class="camera-status"><div class="live-dot off"></div>OFFLINE</div>
+                        <div class="camera-name-overlay">STB-CAM-03</div>
+                    </div>
+                    <div class="camera-info">
+                        <div class="camera-title">
+                            <strong>STB-CAM-03</strong>
+                            <span class="camera-location">Camera 05</span>
+                        </div>
+                        <div class="camera-stats">
+                            <div class="stat"><div class="stat-label">YOLO FPS</div><div class="stat-value">—</div></div>
+                            <div class="stat"><div class="stat-label">OBJECTS</div><div class="stat-value">—</div></div>
+                            <div class="stat"><div class="stat-label">STREAM</div><div class="stat-value">—</div></div>
+                        </div>
+                        <div class="detections"><span class="tag">Offline</span></div>
+                    </div>
+                </div>
+
+
+                <!-- EMPTY SLOT -->
+                <div class="camera-card">
+                    <div class="video-wrap">
+                        <div class="offline-screen">
+                            <div class="offline-icon">+</div>
+                            Add Device
+                        </div>
+                    </div>
+                    <div class="camera-info">
+                        <div class="camera-title">
+                            <strong>Camera Slot 06</strong>
+                            <span class="camera-location">Available</span>
+                        </div>
+                        <div class="camera-stats">
+                            <div class="stat"><div class="stat-label">STATUS</div><div class="stat-value">Empty</div></div>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+        </div>
+    </main>
+</div>
+
+
+<!-- DETAIL MODAL -->
+<div class="modal" id="modal" onclick="closeModal(event)">
+    <div class="modal-box">
+
+        <div class="modal-video">
+            <img id="modalFrame" alt="Camera Detail">
+        </div>
+
+        <div class="modal-head">
+            <div>
+                <strong id="modalTitle">STB-CAM-01</strong>
+                <div class="page-subtitle">Live camera detail</div>
+            </div>
+            <div class="close" onclick="closeModal()">×</div>
+        </div>
+
+        <div class="modal-detect">
+            <div class="modal-detect-title">Detected objects</div>
+            <div id="modalDetections"></div>
+        </div>
+
+    </div>
+</div>
+
+
+<script>
+
+/* =========================================
+   MQTT CONFIG
+========================================= */
+
+const MQTT_HOST = "broker.emqx.io";
+const MQTT_PORT = 8083;
+const MQTT_PATH = "/mqtt";
+
+const TOPIC_FRAME = "yolo/frame";
+const TOPIC_DETECTION = "yolo/detection";
+
+/* Kalau dashboard dibuka lewat https://, browser memblokir ws://.
+   Pakai wss:// port 8084 untuk kasus itu. */
+const USE_WSS = location.protocol === "https:";
+const BROKER_URL = USE_WSS
+    ? `wss://${MQTT_HOST}:8084${MQTT_PATH}`
+    : `ws://${MQTT_HOST}:${MQTT_PORT}${MQTT_PATH}`;
+
+
+/* =========================================
+   ELEMENTS
+========================================= */
+
+const $ = id => document.getElementById(id);
+
+const mainFrame = $("mainFrame");
+const modalFrame = $("modalFrame");
+
+const fpsEl = $("fps");
+const objectsEl = $("objects");
+const streamFpsEl = $("streamFps");
+const detectionsEl = $("detections");
+const modalDetectionsEl = $("modalDetections");
+
+const totalObjectsEl = $("totalObjects");
+const totalNamesEl = $("totalNames");
+
+let latestFrame = null;
+let displayingFrame = false;
+
+let frameCount = 0;
+let lastStreamTime = performance.now();
+let streamFPS = 0;
+
+let lastDetection = null;
+let lastSeen = 0;
+
+
+/* =========================================
+   MQTT
+========================================= */
+
+const client = mqtt.connect(BROKER_URL, {
+    clean: true,
+    reconnectPeriod: 3000,
+    connectTimeout: 10000
+});
+
+function setMqttState(ok, text) {
+    $("mqttDot").classList.toggle("on", ok);
+    $("mqttText").textContent = text;
+    $("mqttTop").textContent = ok ? "ONLINE" : text.toUpperCase();
+}
+
+client.on("connect", () => {
+    console.log("MQTT connected");
+    setMqttState(true, "MQTT Connected");
+    client.subscribe(TOPIC_FRAME);
+    client.subscribe(TOPIC_DETECTION);
+});
+
+client.on("reconnect", () => setMqttState(false, "Reconnecting"));
+client.on("close", () => setMqttState(false, "Disconnected"));
+client.on("error", err => console.error("MQTT error:", err));
+
+client.on("message", (topic, payload) => {
+
+    if (topic === TOPIC_FRAME) {
+        // Simpan frame terbaru saja, jangan antre.
+        latestFrame = payload;
+        renderLatestFrame();
+    }
+
+    else if (topic === TOPIC_DETECTION) {
+        handleDetection(payload);
+    }
+
+});
+
+
+/* =========================================
+   FRAME RENDER
+========================================= */
+
+let currentUrl = null;
+
+function renderLatestFrame() {
+
+    if (displayingFrame || !latestFrame) return;
+
+    displayingFrame = true;
+
+    const payload = latestFrame;
+    latestFrame = null;
+
+    const blob = new Blob([payload], { type: "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+
+    const img = new Image();
+
+    img.onload = () => {
+
+        mainFrame.src = url;
+
+        if ($("modal").classList.contains("show")) {
+            modalFrame.src = url;
+        }
+
+        // Bebaskan blob lama supaya memori tidak bocor
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        currentUrl = url;
+
+        frameCount++;
+
+        const now = performance.now();
+
+        if (now - lastStreamTime >= 1000) {
+            streamFPS = frameCount / ((now - lastStreamTime) / 1000);
+            streamFpsEl.textContent = streamFPS.toFixed(1);
+            frameCount = 0;
+            lastStreamTime = now;
+        }
+
+        displayingFrame = false;
+
+        if (latestFrame) renderLatestFrame();
+
+    };
+
+    img.onerror = () => {
+        URL.revokeObjectURL(url);
+        displayingFrame = false;
+        if (latestFrame) renderLatestFrame();
+    };
+
+    img.src = url;
+}
+
+
+/* =========================================
+   DETECTION
+========================================= */
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;",
+        '"': "&quot;", "'": "&#39;"
+    }[c]));
+}
+
+// Kelompokkan per nama: [{name, count, best}]
+function groupDetections(list) {
+    const map = new Map();
+
+    list.forEach(det => {
+        const name = det.name || `class ${det.class_id}`;
+        const g = map.get(name) || { name, count: 0, best: 0 };
+        g.count++;
+        g.best = Math.max(g.best, Number(det.confidence) || 0);
+        map.set(name, g);
+    });
+
+    return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+function handleDetection(payload) {
+
+    try {
+
+        const data = JSON.parse(payload.toString());
+        const list = Array.isArray(data.detections) ? data.detections : [];
+
+        lastDetection = data;
+        lastSeen = Date.now();
+
+        // FPS YOLO
+        if (typeof data.fps === "number") {
+            fpsEl.textContent = data.fps.toFixed(1);
+        }
+
+        const count = Number(data.count ?? list.length);
+        objectsEl.textContent = count;
+        totalObjectsEl.textContent = count;
+
+        // Sidebar & status LIVE
+        $("sideDot").classList.remove("offline");
+        $("sideMeta").textContent =
+            `Live · ${(data.fps || 0).toFixed(1)} FPS`;
+        $("liveDot").classList.remove("off");
+        $("liveText").textContent = "LIVE";
+
+        const groups = groupDetections(list);
+
+        // Tag per jenis objek: "person × 2"
+        detectionsEl.innerHTML = "";
+
+        if (groups.length) {
+
+            groups.forEach(g => {
+                const tag = document.createElement("span");
+                tag.className = "tag obj";
+                tag.innerHTML =
+                    `${escapeHtml(g.name)}<b>× ${g.count}</b>`;
+                tag.title =
+                    `${g.name}: ${g.count} objek, ` +
+                    `confidence tertinggi ${(g.best * 100).toFixed(0)}%`;
+                detectionsEl.appendChild(tag);
+            });
+
+        } else {
+
+            const tag = document.createElement("span");
+            tag.className = "tag";
+            tag.textContent = "No object";
+            detectionsEl.appendChild(tag);
+
+        }
+
+        // Ringkasan di kartu Objects (atas)
+        totalNamesEl.textContent = groups.length
+            ? groups.map(g => `${g.name} × ${g.count}`).join(", ")
+            : "—";
+
+        // Daftar rinci di modal
+        renderModalDetections(list);
+
+    }
+
+    catch (err) {
+        console.error("Detection JSON error:", err);
+    }
+
+}
+
+function renderModalDetections(list) {
+
+    if (!list.length) {
+        modalDetectionsEl.innerHTML =
+            '<div class="det-box">Tidak ada objek terdeteksi</div>';
+        return;
+    }
+
+    const sorted = [...list].sort(
+        (a, b) => (b.confidence || 0) - (a.confidence || 0)
+    );
+
+    modalDetectionsEl.innerHTML = sorted.map(det => {
+        const pct = Math.round((det.confidence || 0) * 100);
+        return `
+            <div class="det-row">
+                <div><strong>${escapeHtml(det.name)}</strong></div>
+                <div>${pct}%</div>
+                <div>
+                    <div class="det-conf-bar"><span style="width:${pct}%"></span></div>
+                    <div class="det-box">
+                        x:${det.x} y:${det.y} w:${det.w} h:${det.h}
+                    </div>
+                </div>
+            </div>`;
+    }).join("");
+}
+
+// Tandai OFFLINE kalau tidak ada data > 5 detik
+setInterval(() => {
+    if (lastSeen && Date.now() - lastSeen > 5000) {
+        $("sideDot").classList.add("offline");
+        $("sideMeta").textContent = "Offline";
+        $("liveDot").classList.add("off");
+        $("liveText").textContent = "OFFLINE";
+        $("fps").textContent = "0.0";
+        $("streamFps").textContent = "0.0";
+    }
+}, 1000);
+
+
+/* =========================================
+   CAMERA DETAIL
+========================================= */
+
+function openCamera(name) {
+
+    $("modalTitle").textContent = name;
+
+    if (mainFrame.src) modalFrame.src = mainFrame.src;
+
+    if (lastDetection) {
+        renderModalDetections(lastDetection.detections || []);
+    }
+
+    $("modal").classList.add("show");
+
+}
+
+function closeModal(event) {
+
+    if (event && event.target !== event.currentTarget) return;
+
+    $("modal").classList.remove("show");
+
+}
+
+document.addEventListener("keydown", e => {
+    if (e.key === "Escape") closeModal();
+});
+
+</script>
+
+</body>
+</html>
